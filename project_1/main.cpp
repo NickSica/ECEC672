@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <boost/algorithm/string.hpp>
 #include <fstream>
 #include <iostream>
@@ -23,9 +24,20 @@ typedef struct Wire {
 } Wire;
 
 struct _Gate {
+  string type;
+  Timing *strength;
   vector<Wire *> inputs;
   vector<Wire *> outputs;
+
+  _Gate(string type, Timing *strength, vector<Wire *> inputs,
+        vector<Wire *> outputs)
+      : type(type), strength(strength), inputs(inputs), outputs(outputs) {}
 };
+
+typedef struct Reverse_Gate {
+  Gate *gate;
+  vector<string> inputs;
+} Reverse_Gate;
 
 // typedef struct Gates {
 //   vector<Gate> nands;
@@ -43,6 +55,7 @@ map<string, Wire> wires;
 vector<string> inputs;
 vector<string> outputs;
 map<string, vector<Gate>> gates;
+map<string, Reverse_Gate> reverse_gates;
 
 int read_timings() {
   std::string line;
@@ -58,6 +71,8 @@ int read_timings() {
     if (line[0] == '#' || line.empty()) {
       continue;
     }
+
+    std::string gate = line.substr(line.find_first_of(' ') + 1);
 
     std::string op_line;
     getline(file, op_line);
@@ -89,7 +104,7 @@ int read_timings() {
       i++;
     }
 
-    lib_time[op] = t;
+    lib_time[gate] = t;
   }
   file.close();
   return 0;
@@ -130,7 +145,7 @@ int read_benchmark(string folder_name, string benchmark) {
         stop_wire = var;
         wires[start_wire].delay_vars[var].reserve(4);
       } else {
-        wires[start_wire].delay_vars[stop_wire][i - 1] = stof(var);
+        wires[start_wire].delay_vars[stop_wire].push_back(stof(var));
       }
 
       if (DEBUG == 1) {
@@ -189,10 +204,16 @@ int read_benchmark(string folder_name, string benchmark) {
       gate_in.push_back(&wires[in1]);
       gate_in.push_back(&wires[in2]);
       gate_out.push_back(&wires[out]);
-      Gate new_gate = {gate_in, gate_out};
-      gates[gate].push_back(new_gate);
+      // Gate new_gate = {gate, &lib_time[gate + "1"], gate_in, gate_out};
+      // gates[gate].push_back(new_gate);
+      Gate &new_gate = gates[gate].emplace_back(gate, &lib_time[gate + "1"],
+                                                gate_in, gate_out);
       wires[in1].gates.push_back(&new_gate);
       wires[in2].gates.push_back(&new_gate);
+
+      vector<string> ins = {in1, in2};
+      Reverse_Gate r_gate = {&new_gate, ins};
+      reverse_gates[out] = r_gate;
     } else if ((idx = line.find("OUTPUT(")) != string::npos) {
       idx += 7;
       if (DEBUG == 1) {
@@ -208,9 +229,65 @@ int read_benchmark(string folder_name, string benchmark) {
   return 0;
 }
 
+float max_delay(float delay1, float delay2) {
+  // FIXME this isn't right should use arrays
+  return max(delay1, delay2);
+}
+
+float add_delay(float delay1, float delay2) {
+  // FIXME this isn't right should use arrays
+  return delay1 + delay2;
+}
+
+float calc_delay(vector<float> delay_vars) {
+  // FIXME This isn't right, just need to get rid of errors for unused variables
+  return delay_vars[0];
+}
+
+float calc_gate_delay(float delay_vars[4]) {
+  // FIXME This isn't right, just need to get rid of errors for unused variables
+  return delay_vars[0];
+}
+
+float find_path(string output) {
+  string in1 = reverse_gates[output].inputs[0];
+  string in2 = reverse_gates[output].inputs[1];
+
+  Gate *curr_gate = reverse_gates[output].gate;
+  int in1_is_input = (find(inputs.begin(), inputs.end(), in1) != inputs.end());
+  int in2_is_input = (find(inputs.begin(), inputs.end(), in2) != inputs.end());
+  float gate_delay = calc_gate_delay(curr_gate->strength->delays);
+  float in1_delay = calc_delay(wires[in1].delay_vars[output]);
+  float in2_delay = calc_delay(wires[in2].delay_vars[output]);
+  if (DEBUG == 1) {
+    cout << "At output: " << output << endl;
+    cout << "Inputs are: " << in1 << " and " << in2 << endl;
+    cout << "Gate delay is: " << gate_delay << endl;
+    cout << "Input delays are " << in1 << " and " << in2 << endl << endl;
+  }
+  if (!in1_is_input) {
+    in1_delay = add_delay(in1_delay, find_path(in1));
+  }
+
+  if (!in2_is_input) {
+    in2_delay = add_delay(in2_delay, find_path(in2));
+  }
+
+  return add_delay(max_delay(in1_delay, in2_delay), gate_delay);
+}
+
+void get_critical_path() {
+  for (string output : outputs) {
+    string curr_wire = output;
+    float path_delay = find_path(output);
+    cout << "Path delay for " << output << " is " << path_delay << endl;
+  }
+}
+
 int main() {
   read_timings();
   read_benchmark("BENCHMARKS/Combinational1PO", "c17_1PO");
+  get_critical_path();
 
   return 0;
 }
