@@ -12,7 +12,7 @@ using namespace std;
 
 typedef struct Timing {
   float cost;
-  float delays[4];
+  vector<float> delays;
 } Timing;
 
 struct _Gate;
@@ -100,7 +100,7 @@ int read_timings() {
       if (DEBUG == 1) {
         cout << v << endl;
       }
-      t.delays[i] = stof(v);
+      t.delays.push_back(stof(v));
       i++;
     }
 
@@ -229,14 +229,23 @@ int read_benchmark(string folder_name, string benchmark) {
   return 0;
 }
 
-float max_delay(float delay1, float delay2) {
-  // FIXME this isn't right should use arrays
-  return max(delay1, delay2);
+int max_delay(vector<float> *delay1, vector<float> *delay2,
+              vector<float> *max_delay) {
+  // FIXME this isn't right
+  // If in1 is the max return 1, otherwise return 2
+  if (delay1[0] > delay2[0]) {
+    max_delay->push_back(delay1->at(0));
+    return 1;
+  }
+
+  max_delay->push_back(delay2->at(0));
+  return 2;
 }
 
-float add_delay(float delay1, float delay2) {
-  // FIXME this isn't right should use arrays
-  return delay1 + delay2;
+void add_delay(vector<float> *delay1, vector<float> *delay2,
+               vector<float> *delay_out) {
+  // FIXME this isn't right
+  delay_out->push_back(delay1->at(0) + delay2->at(0));
 }
 
 float calc_delay(vector<float> delay_vars) {
@@ -244,43 +253,58 @@ float calc_delay(vector<float> delay_vars) {
   return delay_vars[0];
 }
 
-float calc_gate_delay(float delay_vars[4]) {
-  // FIXME This isn't right, just need to get rid of errors for unused variables
-  return delay_vars[0];
-}
-
-float find_path(string output) {
+tuple<vector<float>, float> calc_crit_path(string output) {
   string in1 = reverse_gates[output].inputs[0];
   string in2 = reverse_gates[output].inputs[1];
 
   Gate *curr_gate = reverse_gates[output].gate;
   int in1_is_input = (find(inputs.begin(), inputs.end(), in1) != inputs.end());
   int in2_is_input = (find(inputs.begin(), inputs.end(), in2) != inputs.end());
-  float gate_delay = calc_gate_delay(curr_gate->strength->delays);
-  float in1_delay = calc_delay(wires[in1].delay_vars[output]);
-  float in2_delay = calc_delay(wires[in2].delay_vars[output]);
+  vector<float> in1_delay = wires[in1].delay_vars[output];
+  vector<float> in2_delay = wires[in2].delay_vars[output];
+  vector<float> new_in1_delay;
+  vector<float> new_in2_delay;
+  float in1_cost = curr_gate->strength->cost;
+  float in2_cost = curr_gate->strength->cost;
   if (DEBUG == 1) {
     cout << "At output: " << output << endl;
     cout << "Inputs are: " << in1 << " and " << in2 << endl;
-    cout << "Gate delay is: " << gate_delay << endl;
-    cout << "Input delays are " << in1 << " and " << in2 << endl << endl;
   }
   if (!in1_is_input) {
-    in1_delay = add_delay(in1_delay, find_path(in1));
+    tuple<vector<float>, float> crit_tuple = calc_crit_path(in1);
+    // TODO: Might be able to just change in1_delay and get rid of the last var
+    add_delay(&in1_delay, &get<0>(crit_tuple), &new_in1_delay);
+    in1_cost = curr_gate->strength->cost + get<1>(crit_tuple);
+  } else {
+    new_in1_delay = in1_delay;
   }
 
   if (!in2_is_input) {
-    in2_delay = add_delay(in2_delay, find_path(in2));
+    tuple<vector<float>, float> crit_tuple = calc_crit_path(in2);
+    add_delay(&in2_delay, &get<0>(crit_tuple), &new_in2_delay);
+    in2_cost = curr_gate->strength->cost + get<1>(crit_tuple);
+  } else {
+    new_in2_delay = in2_delay;
   }
 
-  return add_delay(max_delay(in1_delay, in2_delay), gate_delay);
+  vector<float> new_max;
+  int which_max = max_delay(&new_in1_delay, &new_in2_delay, &new_max);
+  float gate_cost = in1_cost;
+  if (which_max == 2) {
+    gate_cost = in2_cost;
+  }
+  vector<float> new_delay;
+  add_delay(&new_max, &curr_gate->strength->delays, &new_delay);
+  return make_tuple(std::move(new_delay), gate_cost);
 }
 
 void get_critical_path() {
   for (string output : outputs) {
     string curr_wire = output;
-    float path_delay = find_path(output);
-    cout << "Path delay for " << output << " is " << path_delay << endl;
+    tuple<vector<float>, float> path_tuple = calc_crit_path(output);
+    float delay = calc_delay(get<0>(path_tuple));
+    cout << "Path delay for " << output << " is " << delay << endl;
+    cout << "Path cost for " << output << " is " << get<1>(path_tuple) << endl;
   }
 }
 
