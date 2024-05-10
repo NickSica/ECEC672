@@ -1,11 +1,12 @@
 CXX_FLAGS = -Wall -Wextra -Werror
 CXX_DEBUG_FLAGS = -Wall -Wextra -Werror -g
+CXX_SRC_FILES = main.cpp file_parse.cpp math_functions.cpp
 
 debug_build:
-	g++ ${CXX_DEBUG_FLAGS} -o stat main.cpp
+	g++ ${CXX_DEBUG_FLAGS} -o stat ${CXX_SRC_FILES}
 
 all:
-	g++ ${CXX_FLAGS} -o stat main.cpp
+	g++ ${CXX_FLAGS} -o stat ${CXX_SRC_FILES}
 
 run: all
 	./stat "BENCHMARKS/Combinational1PO" "c17_1PO"
