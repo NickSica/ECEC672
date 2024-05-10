@@ -5,8 +5,7 @@
 
 float calc_delay(std::vector<float> &a);
 std::vector<float> add(std::vector<float> &a, std::vector<float> &b);
-int maximum(std::vector<float> *a, std::vector<float> *b);
-// std::vector<float> maximum(std::vector<float> &a, std::vector<float> &b);
+std::vector<float> maximum(std::vector<float> &a, std::vector<float> &b);
 std::vector<float> minimum(std::vector<float> &a, std::vector<float> &b);
 float standard_deviation(std::vector<float> &a);
 float correlation_coefficient(std::vector<float> &a, std::vector<float> &b,

@@ -22,31 +22,24 @@ vector<float> add(vector<float> &a, vector<float> &b) {
   return sum;
 }
 
-int maximum(vector<float> *a, vector<float> *b) {
-  float sigmaA = standard_deviation(*a);
-  float sigmaB = standard_deviation(*b);
-  float rho = correlation_coefficient(*a, *b, sigmaA, sigmaB);
+vector<float> maximum(vector<float> &a, vector<float> &b) {
+  float sigmaA = standard_deviation(a);
+  float sigmaB = standard_deviation(b);
+  float rho = correlation_coefficient(a, b, sigmaA, sigmaB);
   float theta = combined_standard_deviation(sigmaA, sigmaB, rho);
-  float x = normalize_difference(*a, *b, theta);
+  float x = normalize_difference(a, b, theta);
   float phi = cumulative_distribution_function(x);
   float phiX = probability_density_function(x);
-  float mean = expected_max_value(*a, *b, phi, theta, phiX);
+  float mean = expected_max_value(a, b, phi, theta, phiX);
   float variance =
-      variance_of_max(*a, *b, sigmaA, sigmaB, theta, phi, phiX, mean);
+      variance_of_max(a, b, sigmaA, sigmaB, theta, phi, phiX, mean);
 
-  // vector<float> result;
-  // result.push_back(mean);
-  // result.push_back(a[1] * phi + b[1] * (1.0 - phi));
-  // result.push_back(a[2] * phi + b[2] * (1.0 - phi));
-  // result.push_back(sqrt(max(0.0f, variance)));
-
-  // Phi shows which RV is more dominant use this to figure out critical path
-  int is_greater = phi < 0.5;
-  a->at(0) = mean;
-  a->at(1) = a->at(1) * phi + b->at(1) * (1.0 - phi);
-  a->at(2) = a->at(2) * phi + b->at(2) * (1.0 - phi);
-  a->at(3) = sqrt(max(0.0f, variance));
-  return is_greater;
+  vector<float> result;
+  result.push_back(mean);
+  result.push_back(a[1] * phi + b[1] * (1.0 - phi));
+  result.push_back(a[2] * phi + b[2] * (1.0 - phi));
+  result.push_back(sqrt(max(0.0f, variance)));
+  return result;
 }
 
 vector<float> minimum(vector<float> &a, vector<float> &b) {

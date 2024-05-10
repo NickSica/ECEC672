@@ -84,11 +84,18 @@ tuple<vector<float>, float, string> calc_crit_path(string output) {
 
   auto max_iter = in_delays.begin();
   vector<float> new_max = *max_iter;
+  vector<float> crit_max = *max_iter;
   int max_idx = 0;
   int idx = 0;
   for (auto i = std::next(in_delays.begin()); i != in_delays.end(); i++) {
-    int which_max = maximum(&new_max, &*i);
-    if (which_max == 1) {
+    new_max = maximum(new_max, *i);
+    float sigmaA = standard_deviation(crit_max);
+    float sigmaB = standard_deviation(*i);
+    float rho = correlation_coefficient(crit_max, *i, sigmaA, sigmaB);
+    float theta = combined_standard_deviation(sigmaA, sigmaB, rho);
+    float x = normalize_difference(crit_max, *i, theta);
+    float phi = cumulative_distribution_function(x);
+    if (phi < 0.5) {
       max_idx = idx;
     }
     idx++;
