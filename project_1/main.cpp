@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <vector>
+#include <chrono>
 
 #include "file_parse.hpp"
 #include "math_functions.hpp"
@@ -141,7 +142,7 @@ int main(int argc, char *argv[]) {
   if (strcmp(argv[1], "-r") == 0) {
     ofstream csv_file{"output.csv", ofstream::out | ofstream::trunc};
     csv_file
-        << "Benchmark,Critical Path,Critical Path Delay,Cost($),Run Time(s)"
+        << "Benchmark,Critical Path,Critical Path Delay,Cost($),Run Time(ms)"
         << endl;
     folder = argv[2];
     for (const auto &entry : fs::directory_iterator(folder)) {
@@ -154,13 +155,14 @@ int main(int argc, char *argv[]) {
       cout << "Running benchmark " << benchmark << endl;
       cout << "--------------------------------------" << endl;
       read_benchmark(folder, benchmark);
+      auto t1 = chrono::high_resolution_clock::now();
       auto [crit_path, crit_path_vars, delay, cost] = get_critical_path();
-      // FIXME
-      int run_time = 4;
+      auto t2 = chrono::high_resolution_clock::now();
+      auto run_time = chrono::duration_cast<chrono::milliseconds>(t2 - t1);
 
       csv_file << benchmark << ","
                << crit_path
-               << "," << crit_path_vars << "," << delay << "," << cost << "," << run_time << endl;
+               << "," << crit_path_vars << "," << cost << "," << run_time.count() << endl;
       wires.clear();
       inputs.clear();
       outputs.clear();
