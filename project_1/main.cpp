@@ -1,11 +1,15 @@
 #include <algorithm>
 #include <boost/algorithm/string.hpp>
+#include <boost/algorithm/string_regex.hpp>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <vector>
 
-int DEBUG = 1;
+namespace fs = std::filesystem;
+int DEBUG = 0;
 
 using namespace boost::algorithm;
 using namespace std;
@@ -35,7 +39,8 @@ struct _Gate {
 };
 
 typedef struct Reverse_Gate {
-  Gate *gate;
+  // Gate *gate;
+  shared_ptr<Gate> gate;
   vector<string> inputs;
 } Reverse_Gate;
 
@@ -62,7 +67,7 @@ int read_timings() {
   ifstream file;
   file.open("cell_library.time");
   if (!file) {
-    cout << "Error opening cell library timing" << endl;
+    cerr << "Error opening cell library timing" << endl;
     file.close();
     return -1;
   }
@@ -156,7 +161,8 @@ int read_benchmark(string folder_name, string benchmark) {
       cout << endl;
     }
   }
-  cout << endl << endl;
+  if (DEBUG == 1)
+    cout << endl << endl;
   file.close();
   file.clear();
 
@@ -175,44 +181,53 @@ int read_benchmark(string folder_name, string benchmark) {
     }
 
     size_t idx;
-    cout << line << endl;
+    if (DEBUG == 1)
+      cout << line << endl;
     if ((idx = line.find("INPUT(")) != string::npos) {
       idx += 6;
-      cout << "New input: " << line.substr(idx, line.length() - idx - 1)
-           << endl;
+      if (DEBUG == 1)
+        cout << "New input: " << line.substr(idx, line.length() - idx - 1)
+             << endl;
       inputs.push_back(line.substr(idx, line.length() - idx - 1));
     } else if ((idx = line.find(" = ")) != string::npos) {
       string out = line.substr(0, idx);
 
       idx += 3;
-      int pars_idx = line.find("(");
-      string gate = line.substr(idx, pars_idx - idx);
-      pars_idx += 1;
-      idx = line.find(", ");
-      string in1 = line.substr(pars_idx, idx - pars_idx);
-      idx += 2;
-      string in2 = line.substr(idx, line.length() - idx - 1);
+      int parse_idx = line.find("(");
+      string gate = line.substr(idx, parse_idx - idx);
+      parse_idx += 1;
+
+      string raw_inputs = line.substr(parse_idx, line.length() - parse_idx - 1);
+
       if (DEBUG == 1) {
         cout << "Gate: " << gate;
         cout << " Outputs: " << out;
-        cout << " Input1: " << in1;
-        cout << " Input2: " << in2 << endl;
       }
+
+      vector<string> inputs;
+      split_regex(inputs, raw_inputs, boost::regex(", "));
 
       vector<Wire *> gate_in;
       vector<Wire *> gate_out;
-      gate_in.push_back(&wires[in1]);
-      gate_in.push_back(&wires[in2]);
+      for (auto input : inputs) {
+        gate_in.push_back(&wires[input]);
+
+        if (DEBUG == 1) {
+          cout << " Input: " << input;
+        }
+      }
+
       gate_out.push_back(&wires[out]);
       // Gate new_gate = {gate, &lib_time[gate + "1"], gate_in, gate_out};
       // gates[gate].push_back(new_gate);
       Gate &new_gate = gates[gate].emplace_back(gate, &lib_time[gate + "1"],
                                                 gate_in, gate_out);
-      wires[in1].gates.push_back(&new_gate);
-      wires[in2].gates.push_back(&new_gate);
 
-      vector<string> ins = {in1, in2};
-      Reverse_Gate r_gate = {&new_gate, ins};
+      for (auto input : inputs) {
+        wires[input].gates.push_back(&new_gate);
+      }
+
+      Reverse_Gate r_gate = {make_shared<Gate>(new_gate), inputs};
       reverse_gates[out] = r_gate;
     } else if ((idx = line.find("OUTPUT(")) != string::npos) {
       idx += 7;
@@ -222,24 +237,23 @@ int read_benchmark(string folder_name, string benchmark) {
       }
       outputs.push_back(line.substr(idx, line.length() - idx - 1));
     }
-    cout << endl;
+    if (DEBUG == 1)
+      cout << endl;
   }
   file.close();
 
   return 0;
 }
 
-int max_delay(vector<float> *delay1, vector<float> *delay2,
-              vector<float> *max_delay) {
+int max_delay(vector<float> *delay1, vector<float> *delay2) {
   // FIXME this isn't right
   // If in1 is the max return 1, otherwise return 2
-  if (delay1[0] > delay2[0]) {
-    max_delay->push_back(delay1->at(0));
-    return 1;
+  if (delay2[0] > delay1[0]) {
+    delay1->at(0) = delay2->at(0);
+    return 2;
   }
 
-  max_delay->push_back(delay2->at(0));
-  return 2;
+  return 1;
 }
 
 void add_delay(vector<float> *delay1, vector<float> *delay2,
@@ -249,69 +263,126 @@ void add_delay(vector<float> *delay1, vector<float> *delay2,
 }
 
 float calc_delay(vector<float> delay_vars) {
-  // FIXME This isn't right, just need to get rid of errors for unused variables
+  // FIXME This isn't right, just need to get rid of errors for unused
+  // variables
   return delay_vars[0];
 }
 
-tuple<vector<float>, float> calc_crit_path(string output) {
-  string in1 = reverse_gates[output].inputs[0];
-  string in2 = reverse_gates[output].inputs[1];
+tuple<vector<float>, float, string> calc_crit_path(string output) {
+  shared_ptr<Gate> curr_gate = reverse_gates[output].gate;
 
-  Gate *curr_gate = reverse_gates[output].gate;
-  int in1_is_input = (find(inputs.begin(), inputs.end(), in1) != inputs.end());
-  int in2_is_input = (find(inputs.begin(), inputs.end(), in2) != inputs.end());
-  vector<float> in1_delay = wires[in1].delay_vars[output];
-  vector<float> in2_delay = wires[in2].delay_vars[output];
-  vector<float> new_in1_delay;
-  vector<float> new_in2_delay;
-  float in1_cost = curr_gate->strength->cost;
-  float in2_cost = curr_gate->strength->cost;
+  vector<vector<float>> in_delays;
+  vector<float> in_cost;
+  vector<string> crit_paths;
+  for (auto &in : reverse_gates[output].inputs) {
+    int is_input = (find(inputs.begin(), inputs.end(), in) != inputs.end());
+    vector<float> in_delay = wires[in].delay_vars[output];
+    vector<float> new_in_delay;
+    in_cost.push_back(curr_gate->strength->cost);
+    if (!is_input) {
+      tuple<vector<float>, float, string> crit_tuple = calc_crit_path(in);
+      // TODO: Might be able to just change in1_delay and get rid of the last
+      // var
+      add_delay(&in_delay, &get<0>(crit_tuple), &new_in_delay);
+      in_cost.back() += get<1>(crit_tuple);
+      crit_paths.push_back(get<2>(crit_tuple));
+    } else {
+      crit_paths.push_back(in);
+      new_in_delay = in_delay;
+    }
+    in_delays.push_back(new_in_delay);
+  }
   if (DEBUG == 1) {
     cout << "At output: " << output << endl;
-    cout << "Inputs are: " << in1 << " and " << in2 << endl;
-  }
-  if (!in1_is_input) {
-    tuple<vector<float>, float> crit_tuple = calc_crit_path(in1);
-    // TODO: Might be able to just change in1_delay and get rid of the last var
-    add_delay(&in1_delay, &get<0>(crit_tuple), &new_in1_delay);
-    in1_cost = curr_gate->strength->cost + get<1>(crit_tuple);
-  } else {
-    new_in1_delay = in1_delay;
+    // cout << "Inputs are: " << in1 << " and " << in2 << endl;
   }
 
-  if (!in2_is_input) {
-    tuple<vector<float>, float> crit_tuple = calc_crit_path(in2);
-    add_delay(&in2_delay, &get<0>(crit_tuple), &new_in2_delay);
-    in2_cost = curr_gate->strength->cost + get<1>(crit_tuple);
-  } else {
-    new_in2_delay = in2_delay;
+  auto max_iter = in_delays.begin();
+  vector<float> new_max = *max_iter;
+  int max_idx = 0;
+  int idx = 0;
+  for (auto i = max_iter++; i != in_delays.end(); i++) {
+    int which_max = max_delay(&new_max, &*i);
+    if (which_max == 2) {
+      max_idx = idx;
+    }
+    idx++;
   }
-
-  vector<float> new_max;
-  int which_max = max_delay(&new_in1_delay, &new_in2_delay, &new_max);
-  float gate_cost = in1_cost;
-  if (which_max == 2) {
-    gate_cost = in2_cost;
-  }
+  float gate_cost = in_cost[max_idx];
+  string crit_path = crit_paths[max_idx] + "->" + output;
   vector<float> new_delay;
   add_delay(&new_max, &curr_gate->strength->delays, &new_delay);
-  return make_tuple(std::move(new_delay), gate_cost);
+  return make_tuple(std::move(new_delay), gate_cost, crit_path);
 }
 
-void get_critical_path() {
+tuple<string, string, float, float> get_critical_path() {
+  float delay;
+  float cost;
+  string crit_path_vars;
+  string crit_path;
   for (string output : outputs) {
     string curr_wire = output;
-    tuple<vector<float>, float> path_tuple = calc_crit_path(output);
-    float delay = calc_delay(get<0>(path_tuple));
+    vector<float> delay_vars;
+    tie(delay_vars, cost, crit_path) = calc_crit_path(output);
+    stringstream delay_vars_ss;
+    for (auto i : delay_vars) {
+      delay_vars_ss << i << " ";
+    }
+    crit_path_vars = delay_vars_ss.str();
+    delay = calc_delay(delay_vars);
     cout << "Path delay for " << output << " is " << delay << endl;
-    cout << "Path cost for " << output << " is " << get<1>(path_tuple) << endl;
+    cout << "Path cost for " << output << " is " << cost << endl;
   }
+  return make_tuple(crit_path, crit_path_vars, delay, cost);
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+  if (argc == 1) {
+    cerr << "Please input a file" << endl;
+    return 1;
+  }
+
   read_timings();
-  read_benchmark("BENCHMARKS/Combinational1PO", "c17_1PO");
-  get_critical_path();
+
+  string folder;
+  string benchmark;
+  // Run all
+  if (strcmp(argv[1], "-r") == 0) {
+    ofstream csv_file{"output.csv", ofstream::out | ofstream::trunc};
+    csv_file
+        << "Benchmark,Critical Path,Critical Path Delay,Cost($),Run Time(s)"
+        << endl;
+    folder = argv[2];
+    for (const auto &entry : fs::directory_iterator(folder)) {
+      cout << entry.path() << endl;
+      auto file = fs::path(entry).filename();
+      if (file.extension() == ".time" || file.extension() == "")
+        continue;
+      benchmark = file.stem();
+      cout << "--------------------------------------" << endl;
+      cout << "Running benchmark " << benchmark << endl;
+      cout << "--------------------------------------" << endl;
+      read_benchmark(folder, benchmark);
+      auto [crit_path, crit_path_vars, delay, cost] = get_critical_path();
+      // FIXME
+      int run_time = 4;
+
+      csv_file << benchmark << ","
+               << crit_path
+               << "," << crit_path_vars << "," << delay << "," << cost << "," << run_time << endl;
+      wires.clear();
+      inputs.clear();
+      outputs.clear();
+      gates.clear();
+      reverse_gates.clear();
+    }
+    csv_file.close();
+  } else {
+    folder = argv[1];
+    benchmark = argv[2];
+    read_benchmark(folder, benchmark);
+    get_critical_path();
+  }
 
   return 0;
 }

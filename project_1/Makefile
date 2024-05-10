@@ -8,7 +8,10 @@ all:
 	g++ ${CXX_FLAGS} -o stat main.cpp
 
 run: all
-	./stat #-l input_file
+	./stat "BENCHMARKS/Combinational1PO" "c17_1PO"
+
+csv: all
+	./stat -r "BENCHMARKS/Combinational1PO"
 
 #ex_unsat: all
 #	#./sat -l inputs_unsat/uuf50-0100.cnf
@@ -39,11 +42,9 @@ run: all
 #		fi \
 #	done
 
-debug: debug_build 
-	#gdb --args ./sat -l inputs/uf20-02.cnf
-	#gdb --args ./sat -l inputs/uf20-0255.cnf
-	#gdb --args ./sat -l inputs_unsat/uuf50-0100.cnf
-	gdb --args ./stat #-l inputs_unsat/uuf50-0163.cnf
+debug: debug_build
+	#gdb --args ./stat "BENCHMARKS/Combinational1PO" "c17_1PO"
+	gdb --args ./stat "BENCHMARKS/Combinational1PO" "c7552_1PO"
 
 clean:
 	-rm stat
