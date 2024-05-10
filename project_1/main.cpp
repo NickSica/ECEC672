@@ -7,6 +7,8 @@
 #include <map>
 #include <memory>
 #include <vector>
+#include <cfloat>
+#include <cmath>
 
 #include "file_parse.hpp"
 #include "math_functions.hpp"
@@ -77,17 +79,20 @@ tuple<vector<float>, float, string> calc_crit_path(string output) {
     // cout << "Inputs are: " << in1 << " and " << in2 << endl;
   }
 
-  // Need to do smallest means first
-  std::sort(in_delays.begin(), in_delays.end(), [](const vector<float> &a, const vector<float> &b){
-    return a[0] < b[0];
-  });
+  //// Need to do smallest means first
+  //std::sort(in_delays.begin(), in_delays.end(), [](const vector<float> &a, const vector<float> &b){
+  //  return a[0] < b[0];
+  //});
 
   auto max_iter = in_delays.begin();
   vector<float> new_max = *max_iter;
   int max_idx = 0;
   int idx = 0;
-  for (auto i = max_iter++; i != in_delays.end(); i++) {
+  for (auto i = std::next(in_delays.begin()); i != in_delays.end(); i++) {
     int which_max = maximum(&new_max, &*i);
+    if (isnan(new_max[0])) {
+      cout << "WAHHHH" << endl;
+    }
     if (which_max == 1) {
       max_idx = idx;
     }

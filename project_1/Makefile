@@ -45,7 +45,8 @@ csv: all
 
 debug: debug_build
 	#gdb --args ./stat "BENCHMARKS/Combinational1PO" "c17_1PO"
-	gdb --args ./stat "BENCHMARKS/Combinational1PO" "c7552_1PO"
+	#gdb --args ./stat "BENCHMARKS/Combinational1PO" "c7552_1PO"
+	gdb --args ./stat "BENCHMARKS/Combinational1PO" "c432_1PO"
 
 clean:
 	-rm stat
