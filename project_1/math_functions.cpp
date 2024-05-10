@@ -40,10 +40,6 @@ int maximum(vector<float> *a, vector<float> *b) {
   // result.push_back(a[2] * phi + b[2] * (1.0 - phi));
   // result.push_back(sqrt(max(0.0f, variance)));
 
-  if (isnan(mean)) {
-    cout << "WAHHHH" << endl;
-  }
-  // vector<float> result;
   // Phi shows which RV is more dominant use this to figure out critical path
   int is_greater = phi < 0.5;
   a->at(0) = mean;
