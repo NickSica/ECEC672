@@ -7,6 +7,7 @@
 #include <vector>
 
 typedef struct Timing {
+  std::string gate;
   float cost;
   std::vector<float> delays;
 } Timing;
@@ -15,7 +16,8 @@ struct _Gate;
 typedef struct _Gate Gate;
 
 typedef struct Wire {
-  std::vector<Gate *> gates;
+  std::string name;
+  std::vector<std::shared_ptr<Gate>> gates;
   std::map<std::string, std::vector<float>> delay_vars;
 } Wire;
 

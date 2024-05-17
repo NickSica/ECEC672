@@ -67,7 +67,7 @@ int read_timings() {
     string raw_delays = delay_line.substr(delay_line.find_first_of(' ') + 1);
     vector<string> str_delays;
     split(str_delays, raw_delays, boost::is_any_of(" "));
-    Timing t = {cost, {}};
+    Timing t = {gate, cost, {}};
     int i = 0;
     for (auto &v : str_delays) {
       if (DEBUG == 1) {
@@ -117,6 +117,7 @@ int read_benchmark(string folder_name, string benchmark) {
       if (i == 0) {
         stop_wire = var;
         wires[start_wire].delay_vars[var].reserve(4);
+        wires[start_wire].name = start_wire;
       } else {
         wires[start_wire].delay_vars[stop_wire].push_back(stof(var));
       }
@@ -188,14 +189,14 @@ int read_benchmark(string folder_name, string benchmark) {
       gate_out.push_back(&wires[out]);
       // Gate new_gate = {gate, &lib_time[gate + "1"], gate_in, gate_out};
       // gates[gate].push_back(new_gate);
-      Gate &new_gate = gates[gate].emplace_back(gate, &lib_time[gate + "1"],
-                                                gate_in, gate_out);
+      gates[gate].emplace_back(gate, &lib_time[gate + "1"], gate_in, gate_out);
+      std::shared_ptr<Gate> gate_ptr = make_shared<Gate>(gates[gate].back());
 
       for (auto input : inputs) {
-        wires[input].gates.push_back(&new_gate);
+        wires[input].gates.push_back(gate_ptr);
       }
 
-      Reverse_Gate r_gate = {make_shared<Gate>(new_gate), inputs};
+      Reverse_Gate r_gate = {gate_ptr, inputs};
       reverse_gates[out] = r_gate;
     } else if ((idx = line.find("OUTPUT(")) != string::npos) {
       idx += 7;

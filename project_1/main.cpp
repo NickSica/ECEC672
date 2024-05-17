@@ -1,13 +1,13 @@
 #include <algorithm>
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string_regex.hpp>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
 #include <vector>
-#include <chrono>
 
 #include "file_parse.hpp"
 #include "math_functions.hpp"
@@ -51,7 +51,6 @@ float calc_delay(vector<float> delay_vars) {
 
 tuple<vector<float>, float, string> calc_crit_path(string output) {
   shared_ptr<Gate> curr_gate = reverse_gates[output].gate;
-
   vector<vector<float>> in_delays;
   vector<float> in_cost;
   vector<string> crit_paths;
@@ -79,9 +78,10 @@ tuple<vector<float>, float, string> calc_crit_path(string output) {
   }
 
   //// Need to do smallest means first
-  //std::sort(in_delays.begin(), in_delays.end(), [](const vector<float> &a, const vector<float> &b){
-  //  return a[0] < b[0];
-  //});
+  // std::sort(in_delays.begin(), in_delays.end(), [](const vector<float> &a,
+  // const vector<float> &b){
+  //   return a[0] < b[0];
+  // });
 
   auto max_iter = in_delays.begin();
   vector<float> new_max = *max_iter;
@@ -107,11 +107,15 @@ tuple<vector<float>, float, string> calc_crit_path(string output) {
   return make_tuple(std::move(new_delay), gate_cost, crit_path);
 }
 
-tuple<string, string, float, float> get_critical_path() {
+tuple<string, string, float, float> stat_sta() {
   float delay;
   float cost;
+  float max_delay = 0;
+  float max_cost;
   string crit_path_vars;
   string crit_path;
+  string max_cpv;
+  string max_crit_path;
   for (string output : outputs) {
     string curr_wire = output;
     vector<float> delay_vars;
@@ -122,10 +126,82 @@ tuple<string, string, float, float> get_critical_path() {
     }
     crit_path_vars = delay_vars_ss.str();
     delay = calc_delay(delay_vars);
+    if (delay >= max_delay) {
+      max_delay = delay;
+      max_cpv = crit_path;
+      max_crit_path = crit_path;
+      max_cost = cost;
+    }
+
     cout << "Path delay for " << output << " is " << delay << endl;
     cout << "Path cost for " << output << " is " << cost << endl;
   }
-  return make_tuple(crit_path, crit_path_vars, delay, cost);
+  return make_tuple(max_crit_path, max_cpv, max_delay, max_cost);
+}
+
+tuple<string, string, float, float> optimize() {
+  auto [crit_path, crit_path_vars, delay, cost] = stat_sta();
+  float cost_fit = delay * cost;
+  for (auto &pair : gates) {
+    for (auto &gate : pair.second) {
+      string gate_strength = gate.strength->gate;
+      int drive_idx = gate_strength.find_last_not_of("1234567890");
+      int drive = stoi(gate_strength.substr(drive_idx + 1));
+      int new_drive = drive + 1;
+      float new_cost_fit = cost_fit;
+      while (new_cost_fit <= cost_fit) {
+        if (lib_time.find(pair.first + to_string(new_drive)) ==
+            lib_time.end()) {
+          break;
+        } else {
+          auto old_strength = gate.strength;
+          gate.strength = &lib_time[pair.first + to_string(new_drive)];
+          int bad_gate = 0;
+          for (auto &output : gate.outputs) {
+            if (output->name == "") {
+              bad_gate = 1;
+              break;
+            }
+
+            reverse_gates[output->name].gate->strength =
+                &lib_time[pair.first + to_string(new_drive)];
+          }
+          if (bad_gate == 1) {
+            break;
+          }
+          cout << "Switching " << old_strength->gate << " for "
+               << gate.strength->gate << endl;
+          auto [new_crit_path, new_crit_path_vars, new_delay, new_cost] =
+              stat_sta();
+          new_cost_fit = new_delay * new_cost;
+          cout << "Delay before: " << delay << endl;
+          cout << "Delay after: " << new_delay << endl;
+          cout << "Cost before: " << cost << endl;
+          cout << "Cost after:  " << new_cost << endl;
+          cout << "Cost fit before: " << cost_fit << endl;
+          cout << "Cost fit after:  " << new_cost_fit << endl << endl;
+
+          if (new_cost_fit > cost_fit) {
+            gate.strength = old_strength;
+            for (auto &output : gate.outputs) {
+              reverse_gates[output->name].gate->strength = old_strength;
+            }
+          } else {
+            tie(crit_path, crit_path_vars, delay, cost) =
+                tie(new_crit_path, new_crit_path_vars, new_delay, new_cost);
+            gate_strength = gate.strength->gate;
+            drive_idx = gate_strength.find_last_not_of("1234567890");
+            drive = stoi(gate_strength.substr(drive_idx + 1));
+            new_drive = drive + 1;
+            delay = new_delay;
+            cost_fit = new_cost_fit;
+            cost = new_cost;
+          }
+        }
+      }
+    }
+  }
+  return tie(crit_path, crit_path_vars, delay, cost);
 }
 
 int main(int argc, char *argv[]) {
@@ -156,13 +232,13 @@ int main(int argc, char *argv[]) {
       cout << "--------------------------------------" << endl;
       read_benchmark(folder, benchmark);
       auto t1 = chrono::high_resolution_clock::now();
-      auto [crit_path, crit_path_vars, delay, cost] = get_critical_path();
+      auto [crit_path, crit_path_vars, delay, cost] = optimize();
+
       auto t2 = chrono::high_resolution_clock::now();
       auto run_time = chrono::duration_cast<chrono::milliseconds>(t2 - t1);
 
-      csv_file << benchmark << ","
-               << crit_path
-               << "," << crit_path_vars << "," << cost << "," << run_time.count() << endl;
+      csv_file << benchmark << "," << crit_path << "," << crit_path_vars << ","
+               << cost << "," << run_time.count() << endl;
       wires.clear();
       inputs.clear();
       outputs.clear();
@@ -174,7 +250,7 @@ int main(int argc, char *argv[]) {
     folder = argv[1];
     benchmark = argv[2];
     read_benchmark(folder, benchmark);
-    get_critical_path();
+    auto [crit_path, crit_path_vars, delay, cost] = optimize();
   }
 
   return 0;
